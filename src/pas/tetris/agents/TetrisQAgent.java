@@ -170,8 +170,57 @@ public class TetrisQAgent
         return emptyCells;
     }
 
-    private int getLinesCleared(GameView game) {
-        return game.getTotalScore() - game.getScoreThisTurn();
+    private List<Integer> getColumnHeights(GameView game) {
+        List<Integer> columnHeights = new ArrayList<>();
+        for (int r = 0; r < Board.NUM_COLS; r++) {
+            int height = 0;
+            for (int c = 0; c < Board.NUM_ROWS; c++) {
+                if (game.getBoard().isCoordinateOccupied(r, c)) {
+                    height = Board.NUM_ROWS - c;
+                    break;
+                }
+            }
+            columnHeights.add(height);
+        }
+        return columnHeights;
+    
+    }
+
+    private int getMaxHeight(List<Integer> columnHeights) {
+        int maxHeight = 0;
+        for (int height : columnHeights) {
+            if (height > maxHeight) {
+                maxHeight = height;
+            }
+        }
+        return maxHeight;
+    }
+
+    private int getLinesCleared(GameView game, Mino potentialAction) {
+        int linesCleared = 0;
+        try {
+            Matrix grayscale = game.getGrayscaleImage(potentialAction);
+            for (int r = 0; r < grayscale.getShape().getNumRows(); r++) {
+                int occupiedForLineCount = 0;
+                boolean isRowFull = true;
+                for (int c = 0; c < grayscale.getShape().getNumCols(); c++) {
+                    if (grayscale.get(r, c) == 0.0) {
+                        isRowFull = false;
+                        break;
+                    }
+                    else {
+                        occupiedForLineCount++;
+                    }
+    
+                }
+                if (isRowFull && occupiedForLineCount == Board.NUM_COLS) {
+                    linesCleared++;
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return linesCleared; 
     }
 
 
@@ -182,7 +231,7 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
         features.set(0, 0, getAggregateHeight(game));
         features.set(0, 1, getHoles(game));
         features.set(0, 2, getBumpiness(game));
-        features.set(0, 3, getEmptyCells(game) - getHoles(game));
+        features.set(0, 3, getLinesCleared(game, potentialAction));
     } catch (Exception e) {
         e.printStackTrace();
         System.exit(-1);
@@ -190,6 +239,8 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
 
     return features;
 }
+
+
 
 
     /**
@@ -319,9 +370,8 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
         double calculateCells = getEmptyCells(game) - getHoles(game);
 
 
-        double weightHeight = 0.002;
-        double weightLines = 0.016;
-        double weightHoles = 0.00001;
+        double weightHeight = 0.0001;
+        double weightHoles = 0.0003;
         double weightBumpiness = 0.0015;
 
 
@@ -329,12 +379,13 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
         double normalizedHoles = getHoles(game) / totalHoles;
         double normalizedBumpiness = getBumpiness(game) / totalBumpiness;
         double normalizedEmptyCells = (getEmptyCells(game) - getHoles(game)) / 200;
+
+
         
-        double reward = score * 10;
+        double reward = score;
         reward -= normalizedHeight;
         reward -= normalizedHoles;
         reward -= normalizedBumpiness;  
-        reward += normalizedEmptyCells;
         //reward += getLinesCleared(game) * weightLines;
 
         //double lineReward = Math.pow(getLinesCleared(game), 2) * 10;
