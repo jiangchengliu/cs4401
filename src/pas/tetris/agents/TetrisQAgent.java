@@ -267,6 +267,8 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
         return this.getRandom().nextDouble() <= explorationProb;
     }
 
+
+
     /**
      * This method is a counterpart to the "shouldExplore" method. Whenever we decide
      * that we should ignore our policy, we now have to actually choose an action.
@@ -276,7 +278,29 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
      * option, which in practice doesn't work as well as a more guided strategy.
      * I would recommend devising your own strategy here.
      */
+
+     private Mino getBestAction(GameView game) {
+        List<Mino> finalPositions = game.getFinalMinoPositions();
+        Mino bestMino = finalPositions.get(0);
+        double bestScore = Double.NEGATIVE_INFINITY;
+        for (Mino mino : finalPositions) {
+            Matrix features = getQFunctionInput(game, mino);
+            try {
+                Matrix qValues = this.getQFunction().forward(features);
+                double score = qValues.get(0, 0);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMino = mino;
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                System.exit(-1);
+            }
+        }
+        return bestMino;
+    }
     public Mino getExplorationMove(final GameView game) {
+        /*
         int randIdx = this.getRandom().nextInt(game.getFinalMinoPositions().size());
         List<Mino> finalPositions = game.getFinalMinoPositions();
         Map<Mino, Integer> minoOccur = new HashMap<>();
@@ -286,10 +310,15 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
         while (occurrences != null && occurrences > occurThreshold) {
             randIdx = this.getRandom().nextInt(game.getFinalMinoPositions().size());
             mino = finalPositions.get(randIdx);
-            occurrences = minoOccur.get(mino); // Update occurrences
+            occurrences = minoOccur.get(mino);
         }
-        minoOccur.put(mino, occurrences != null ? occurrences + 1 : 1);
-        return mino;
+        minoOccur.put(mino, occurrences != null ? occurrences + 1 : 1);       
+         */
+
+
+        //int randI = this.getRandom().nextInt(game.getFinalMinoPositions().size());
+        //game.getFinalMinoPositions().get(randI)
+        return getBestAction(game);
     }
     
     
@@ -359,45 +388,31 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
     public double getReward(final GameView game)
     {
         double score = game.getScoreThisTurn();
+        if (game.didAgentLose() == true) {
+            score -= 1;
+        }
         
         int totalHeight = 200;
         int totalHoles = 190;
         int totalBumpiness = 180;
 
-        double calculateHeight = getAggregateHeight(game);
-        double calculateHoles = getHoles(game);
-        double calculateBumpiness = getBumpiness(game);
-        double calculateCells = getEmptyCells(game) - getHoles(game);
 
-
-        double weightHeight = 0.0001;
-        double weightHoles = 0.0003;
-        double weightBumpiness = 0.0015;
+        double weightHeight = 0.001;
+        double weightHoles = 0.0031;
+        double weightBumpiness = 0.004;
 
 
         double normalizedHeight = getAggregateHeight(game) / totalHeight;
         double normalizedHoles = getHoles(game) / totalHoles;
         double normalizedBumpiness = getBumpiness(game) / totalBumpiness;
-        double normalizedEmptyCells = (getEmptyCells(game) - getHoles(game)) / 200;
 
 
-        
         double reward = score;
-        reward -= normalizedHeight;
-        reward -= normalizedHoles;
-        reward -= normalizedBumpiness;  
-        //reward += getLinesCleared(game) * weightLines;
+        reward -= normalizedHeight * weightHeight;
+        reward -= normalizedHoles * weightHoles;
+        reward -= normalizedBumpiness * weightBumpiness;  
 
-        //double lineReward = Math.pow(getLinesCleared(game), 2) * 10;
-        //lineReward -= normalizedHeight * weightHeight;
-        //lineReward -= normalizedHoles * weightHoles;
-        //lineReward -= (getEmptyCells(game) - getHoles(game)) * weightHoles;
-
-        if (game.didAgentLose() == true) {
-            return 0;
-        } else {
-            return reward;
-        }
+        return reward;
     }
 
 }
