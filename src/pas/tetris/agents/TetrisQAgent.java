@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Random;
 import java.util.Map;
 import java.util.HashMap;
-
 // JAVA PROJECT IMPORTS
 import edu.bu.tetris.agents.QAgent;
 import edu.bu.tetris.agents.TrainerAgent.GameCounter;
@@ -54,7 +53,7 @@ public class TetrisQAgent
         // this example will create a 3-layer neural network (1 hidden layer)
         // in this example, the input to the neural network is the
         // image of the board unrolled into a giant vector
-        final int numPixelsInImage = 4;
+        final int numPixelsInImage = 5;
         final int outDim = 1;
 
         Sequential qFunction = new Sequential();
@@ -84,6 +83,18 @@ public class TetrisQAgent
         "state" of the game without relying on the pixels? If you were given
         a tetris game midway through play, what properties would you look for?
      */
+
+private int getEmptyCells(GameView game) {
+    int emptyCells = 0;
+    for (int r = 2; r < Board.NUM_ROWS; r++) {
+        for (int c = 0; c < Board.NUM_COLS; c++) {
+            if (!game.getBoard().isCoordinateOccupied(c, r)) {
+                emptyCells++;
+            }
+        }
+    }
+    return emptyCells;
+}
 
 
 
@@ -172,12 +183,13 @@ public class TetrisQAgent
 
 @Override
 public Matrix getQFunctionInput(final GameView game, final Mino potentialAction) {
-    Matrix features = Matrix.zeros(1, 4); 
+    Matrix features = Matrix.zeros(1, 5); 
     try {
         features.set(0, 0, getAggregateHeight(game));
         features.set(0, 1, getHoles(game));
         features.set(0, 2, getBumpiness(game));
         features.set(0, 3, getLinesCleared(game, potentialAction));
+        features.set(0, 4, getEmptyCells(game) - getHoles(game));
     } catch (Exception e) {
         e.printStackTrace();
         System.exit(-1);
@@ -208,9 +220,9 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
     public boolean shouldExplore(final GameView game,
                                  final GameCounter gameCounter)
     {
-        long totalActions = gameCounter.getTotalGamesPlayed() * gameCounter.getCycleLength() + gameCounter.getCurrentMoveIdx();
-        double explorationProb = Math.min(1.0, EXPLORATION_PROB / (1.0 + totalActions / gameCounter.getNumTrainingGames()));
-        return this.getRandom().nextDouble() <= explorationProb;
+        //long totalActions = gameCounter.getTotalGamesPlayed() * gameCounter.getCycleLength() + gameCounter.getCurrentMoveIdx();
+        //double explorationProb = Math.min(1.0, EXPLORATION_PROB / (1.0 + totalActions / gameCounter.getNumTrainingGames()));
+        return this.getRandom().nextDouble() <= EXPLORATION_PROB;
     }
 
 
@@ -281,10 +293,9 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
             occurrences = minoOccur.get(mino);
         }
         minoOccur.put(mino, occurrences != null ? occurrences + 1 : 1);       
-         */
-        //int randI = this.getRandom().nextInt(game.getFinalMinoPositions().size());
-        //game.getFinalMinoPositions().get(randI)
-       double epsilon = 0.1;
+
+
+               double epsilon = 0.1;
        double rand = this.getRandom().nextDouble();
        Mino mino = null;
        if (rand < epsilon) {
@@ -308,6 +319,36 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
            }
        }        
         return mino;
+
+
+ int randI = this.getRandom().nextInt(game.getFinalMinoPositions().size());
+        return game.getFinalMinoPositions().get(randI);
+         */
+        double epsilon = 0.1;
+        double rand = this.getRandom().nextDouble();
+        Mino mino = null;
+        if (rand < epsilon) {
+            int randIdx = this.getRandom().nextInt(game.getFinalMinoPositions().size());
+            mino = game.getFinalMinoPositions().get(randIdx);
+        } else {
+            mino = game.getFinalMinoPositions().get(0);
+            double maxQValue = Double.NEGATIVE_INFINITY;
+            for (Mino potentialAction : game.getFinalMinoPositions()) {
+                Matrix qFunctionInput = getQFunctionInput(game, potentialAction);
+                Matrix qValue;
+             try {
+                 qValue = this.getQFunction().forward(qFunctionInput);
+                 if (qValue.get(0, 0) > maxQValue) {
+                     maxQValue = qValue.get(0, 0);
+                     mino = potentialAction;
+                 }
+             } catch (Exception e) {
+                 e.printStackTrace();
+             }
+            }
+        }        
+         return mino;
+       
     }
     
     
@@ -373,13 +414,6 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
      * (unless you have a long hole waiting for an I-block). When you design a reward
      * signal that is less sparse, you should see your model optimize this reward over time.
      */
-    private double eLog(double score){
-        if (score < 0){
-            return Math.exp(-Math.log(Math.abs(score)));
-        } else {
-            return Math.exp(Math.log(score));
-        }
-    }
 
     @Override
     public double getReward(final GameView game)
@@ -391,21 +425,27 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
         int totalBumpiness = 180;
 
 
-        double weightHeight = 0.0056;
-        double weightHoles = 0.031;
-        double weightBumpiness = 0.014;
+        double weightHeight = 0.0001;
+        double weightHoles = 0.0003;
+        double weightBumpiness = 0.0015;
+        double weightEmptyCells = 0.00013;
 
 
         double normalizedHeight = getAggregateHeight(game) / totalHeight;
         double normalizedHoles = getHoles(game) / totalHoles;
         double normalizedBumpiness = getBumpiness(game) / totalBumpiness;
+        double normalizedEmptyCells = (getEmptyCells(game) - getHoles(game)) / totalHeight;
 
 
-        double reward = (score);
+        double reward = score;
         reward -= normalizedHeight * weightHeight;
         reward -= normalizedHoles * weightHoles;
-        reward -= normalizedBumpiness * weightBumpiness;  
-        return eLog(reward);
+        reward -= normalizedBumpiness * weightBumpiness; 
+        reward += normalizedEmptyCells * weightEmptyCells; 
+        if (game.didAgentLose()) {
+            return -1;
+        }
+        return reward;
     }
 
 }
