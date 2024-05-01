@@ -27,6 +27,8 @@ import edu.bu.tetris.nn.layers.Sigmoid;
 import edu.bu.tetris.training.data.Dataset;
 import edu.bu.tetris.utils.Pair;
 import edu.bu.tetris.utils.Coordinate;
+import edu.bu.tetris.game.minos.Mino.Orientation;
+
 
 
 public class TetrisQAgent
@@ -53,7 +55,6 @@ public class TetrisQAgent
         // in this example, the input to the neural network is the
         // image of the board unrolled into a giant vector
         final int numPixelsInImage = 4;
-        final int hiddenDim = 2 * numPixelsInImage;
         final int outDim = 1;
 
         Sequential qFunction = new Sequential();
@@ -84,25 +85,7 @@ public class TetrisQAgent
         a tetris game midway through play, what properties would you look for?
      */
 
- private double getBlockDensity(GameView game) {
-    double blockDensity = 0;
-    double totalBlocks = 0;
-    int totalHoles = getHoles(game);
-    if (totalHoles > 0) {
-        for (int r = 2; r < Board.NUM_COLS; r++) {
-            for (int c = 0; c < Board.NUM_ROWS; c++) {
-                if (game.getBoard().isCoordinateOccupied(r, c)) {
-                    totalBlocks++;
-                }
-            }
-        }
-        blockDensity = totalBlocks / totalHoles + totalBlocks;
-    } else {
-        blockDensity = 0.99;
-    }
-    
-    return blockDensity;
-}
+
 
 
  private double getAggregateHeight(GameView game) {
@@ -158,43 +141,6 @@ public class TetrisQAgent
             return holes;
         }
 
-    private int getEmptyCells(GameView game) {
-        int emptyCells = 0;
-        for (int r = 0; r < Board.NUM_COLS; r++) {
-            for (int c = 2; c < Board.NUM_ROWS; c++) {
-                if (!game.getBoard().isCoordinateOccupied(r, c)) {
-                    emptyCells++;
-                }
-            }
-        }
-        return emptyCells;
-    }
-
-    private List<Integer> getColumnHeights(GameView game) {
-        List<Integer> columnHeights = new ArrayList<>();
-        for (int r = 0; r < Board.NUM_COLS; r++) {
-            int height = 0;
-            for (int c = 0; c < Board.NUM_ROWS; c++) {
-                if (game.getBoard().isCoordinateOccupied(r, c)) {
-                    height = Board.NUM_ROWS - c;
-                    break;
-                }
-            }
-            columnHeights.add(height);
-        }
-        return columnHeights;
-    
-    }
-
-    private int getMaxHeight(List<Integer> columnHeights) {
-        int maxHeight = 0;
-        for (int height : columnHeights) {
-            if (height > maxHeight) {
-                maxHeight = height;
-            }
-        }
-        return maxHeight;
-    }
 
     private int getLinesCleared(GameView game, Mino potentialAction) {
         int linesCleared = 0;
@@ -279,25 +225,47 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
      * I would recommend devising your own strategy here.
      */
 
-     private Mino getBestAction(GameView game) {
-        List<Mino> finalPositions = game.getFinalMinoPositions();
-        Mino bestMino = finalPositions.get(0);
-        double bestScore = Double.NEGATIVE_INFINITY;
-        for (Mino mino : finalPositions) {
-            Matrix features = getQFunctionInput(game, mino);
-            try {
-                Matrix qValues = this.getQFunction().forward(features);
-                double score = qValues.get(0, 0);
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestMino = mino;
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-                System.exit(-1);
+
+    private double getProbForTSpin(GameView game, Mino mino) {
+        double prob = 0;
+        if (mino.getType() == Mino.MinoType.T) {
+            if (isTSpinPossible(game, mino)) {
+                prob = 1;
             }
+            
         }
-        return bestMino;
+        return prob;
+    }
+
+    private boolean isTSpinPossible(GameView game, Mino mino) {
+        Matrix grayscale = null;
+        Boolean isTSpinPossible = false;
+        try {
+            grayscale = game.getGrayscaleImage(mino);
+            int pivotRow = mino.getPivotBlockCoordinate().getXCoordinate();
+            int pivotCol = mino.getPivotBlockCoordinate().getYCoordinate();
+            int[] rowOffsets = {0, 0, 1, -1};
+            int[] colOffsets = {1, -1, 0, 0};
+            int numOccupied = 0;
+            for (int i = 0; i < 4; i++) {
+                int newRow = pivotRow + rowOffsets[i];
+                int newCol = pivotCol + colOffsets[i];
+                if (newRow >= 0 && newRow < Board.NUM_ROWS-2 && newCol >= 0 && newCol < Board.NUM_COLS) {
+                    if (grayscale.get(newRow, newCol) == 1.0) {
+                        numOccupied++;
+                    }
+                }
+            }
+            if (numOccupied >= 3) {
+                isTSpinPossible = true;
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.exit(-1);
+        }
+        return isTSpinPossible;
+
     }
     public Mino getExplorationMove(final GameView game) {
         /*
@@ -314,11 +282,32 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
         }
         minoOccur.put(mino, occurrences != null ? occurrences + 1 : 1);       
          */
-
-
         //int randI = this.getRandom().nextInt(game.getFinalMinoPositions().size());
         //game.getFinalMinoPositions().get(randI)
-        return getBestAction(game);
+       double epsilon = 0.1;
+       double rand = this.getRandom().nextDouble();
+       Mino mino = null;
+       if (rand < epsilon) {
+           int randIdx = this.getRandom().nextInt(game.getFinalMinoPositions().size());
+           mino = game.getFinalMinoPositions().get(randIdx);
+       } else {
+           mino = game.getFinalMinoPositions().get(0);
+           double maxQValue = Double.NEGATIVE_INFINITY;
+           for (Mino potentialAction : game.getFinalMinoPositions()) {
+               Matrix qFunctionInput = getQFunctionInput(game, potentialAction);
+               Matrix qValue;
+            try {
+                qValue = this.getQFunction().forward(qFunctionInput);
+                if (qValue.get(0, 0) > maxQValue) {
+                    maxQValue = qValue.get(0, 0);
+                    mino = potentialAction;
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+           }
+       }        
+        return mino;
     }
     
     
@@ -384,22 +373,27 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
      * (unless you have a long hole waiting for an I-block). When you design a reward
      * signal that is less sparse, you should see your model optimize this reward over time.
      */
+    private double eLog(double score){
+        if (score < 0){
+            return Math.exp(-Math.log(Math.abs(score)));
+        } else {
+            return Math.exp(Math.log(score));
+        }
+    }
+
     @Override
     public double getReward(final GameView game)
     {
         double score = game.getScoreThisTurn();
-        if (game.didAgentLose() == true) {
-            score -= 1;
-        }
         
         int totalHeight = 200;
         int totalHoles = 190;
         int totalBumpiness = 180;
 
 
-        double weightHeight = 0.001;
-        double weightHoles = 0.0031;
-        double weightBumpiness = 0.004;
+        double weightHeight = 0.0056;
+        double weightHoles = 0.031;
+        double weightBumpiness = 0.014;
 
 
         double normalizedHeight = getAggregateHeight(game) / totalHeight;
@@ -407,12 +401,11 @@ public Matrix getQFunctionInput(final GameView game, final Mino potentialAction)
         double normalizedBumpiness = getBumpiness(game) / totalBumpiness;
 
 
-        double reward = score;
+        double reward = (score);
         reward -= normalizedHeight * weightHeight;
         reward -= normalizedHoles * weightHoles;
         reward -= normalizedBumpiness * weightBumpiness;  
-
-        return reward;
+        return eLog(reward);
     }
 
 }
